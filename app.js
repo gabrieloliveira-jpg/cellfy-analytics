@@ -15,7 +15,9 @@ const STATE = {
   recentes: [],
   allItems: {},   // sku -> dados mais recentes da planilha (para refresh dos "feito")
   db: {},         // sku -> { margem, modificacao, obs, doneDate, estoqueNaEpoca, s7dNaEpoca, s30dNaEpoca, fornecedor, categoria }
+  dbNovos: {},    // sku -> mesma estrutura do db, mas para "Produto Novo" — nunca expira em 10 dias
   draft: {},      // sku -> { margem, modificacao, obs }  (anotações em digitação, ainda não marcadas como feito)
+  totalParadosHistorico: new Set(), // SKUs que já se qualificaram como parados alguma vez (só cresce; sai quando vende)
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -23,7 +25,9 @@ const STATE = {
 // ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   loadDB();
+  loadDBNovos();
   loadDraft();
+  loadHistorico();
 
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -32,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       document.getElementById('page-' + btn.dataset.page).classList.add('active');
       if (btn.dataset.page === 'apresentacao') renderApresentacao();
+      if (btn.dataset.page === 'novos') renderNovos();
     });
   });
 
@@ -42,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('filterCat').addEventListener('change', renderParados);
   document.getElementById('searchTrabalhados').addEventListener('input', renderTrabalhados);
   document.getElementById('filterSaida').addEventListener('change', renderTrabalhados);
+  document.getElementById('searchNovos').addEventListener('input', renderNovos);
   document.getElementById('searchRecentes').addEventListener('input', renderRecentes);
 
   fetchSheet();
@@ -135,21 +141,24 @@ function processData(rows) {
   const allItems = {};
   const cats = new Set();
 
-  // Primeiro, atualiza o resultado de saída de todos os SKUs "feitos"
+  // Primeiro, atualiza o resultado de saída de todos os SKUs "feitos" e "novos"
   // usando os dados desta atualização — precisa vir antes do loop de
   // classificação porque a expiração depende de já sabermos se teve saída.
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
     const sku = String(r[colSKU] || '').trim();
-    if (!sku || !STATE.db[sku]) continue;
+    if (!sku) continue;
     const s7d  = toNum(r[colS7]);
     const s30d = toNum(r[colS30]);
-    const rec  = STATE.db[sku];
-    if (s7d > rec.s7dNaEpoca || s30d > rec.s30dNaEpoca) {
-      rec.resultadoSaida = true;
+    if (STATE.db[sku] && (s7d > STATE.db[sku].s7dNaEpoca || s30d > STATE.db[sku].s30dNaEpoca)) {
+      STATE.db[sku].resultadoSaida = true;
+    }
+    if (STATE.dbNovos[sku] && (s7d > STATE.dbNovos[sku].s7dNaEpoca || s30d > STATE.dbNovos[sku].s30dNaEpoca)) {
+      STATE.dbNovos[sku].resultadoSaida = true;
     }
   }
   saveDB();
+  saveDBNovos();
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
@@ -169,10 +178,19 @@ function processData(rows) {
     if (categoria) cats.add(categoria);
 
     const jaFeito = !!STATE.db[sku];
+    const jaNovo  = !!STATE.dbNovos[sku];
     const expirado = jaFeito && checkExpirado(STATE.db[sku]);
 
-    // Parados: estoque>0, 60d=0, e (NUNCA foi feito OU expirou sem saída em 10 dias)
-    if (estoque > 0 && s60d === 0 && (!jaFeito || expirado)) parados.push(item);
+    // Parados: estoque>0, 60d=0, e (NUNCA foi feito/novo OU expirou sem saída em 10 dias)
+    // Produtos Novos NUNCA voltam automaticamente — só pelo botão manual.
+    if (estoque > 0 && s60d === 0 && !jaNovo && (!jaFeito || expirado)) parados.push(item);
+
+    // Total Parados histórico: registra qualquer SKU que se qualifique agora como parado
+    // (estoque>0, 60d=0), independente de já ter sido marcado como feito ou não.
+    // Só sai dessa contagem quando o produto realmente vender (ver bloco abaixo).
+    if (estoque > 0 && s60d === 0) {
+      STATE.totalParadosHistorico.add(sku);
+    }
 
     // Recém ativos: estoque>0 e 60d>0
     if (estoque > 0 && s60d > 0) recentes.push(item);
@@ -181,6 +199,20 @@ function processData(rows) {
   STATE.parados  = parados;
   STATE.recentes = recentes;
   STATE.allItems = allItems;
+
+  // Remove do histórico cumulativo qualquer SKU que tenha vendido de fato:
+  // (a) voltou a ter saída nos últimos 60 dias direto na planilha, ou
+  // (b) está marcado como "feito"/"novo" e o sistema já detectou resultadoSaida=true.
+  for (const sku of [...STATE.totalParadosHistorico]) {
+    const atual = allItems[sku];
+    const vendeuNaPlanilha = atual && atual.s60d > 0;
+    const vendeuNoDb    = STATE.db[sku] && STATE.db[sku].resultadoSaida;
+    const vendeuNoNovos = STATE.dbNovos[sku] && STATE.dbNovos[sku].resultadoSaida;
+    if (vendeuNaPlanilha || vendeuNoDb || vendeuNoNovos) {
+      STATE.totalParadosHistorico.delete(sku);
+    }
+  }
+  saveHistorico();
 
   // Filtro de categorias
   const sel = document.getElementById('filterCat');
@@ -202,6 +234,7 @@ function processData(rows) {
   updateBadges();
   renderParados();
   renderTrabalhados();
+  renderNovos();
   renderRecentes();
 
   toast(`✓ Planilha atualizada — ${parados.length} parados, ${Object.keys(STATE.db).length} já feitos`);
@@ -265,7 +298,7 @@ function renderParados() {
         <td>
           <select class="inline-input" onchange="updateDraft('${esc(item.sku)}','modificacao',this.value)">
             <option value="">Selecione...</option>
-            ${['Redução de preço','Promoção / Cupom','Melhoria de título','Troca de categoria','Anúncio patrocinado','Kit / Bundle','Revisão de fotos','Outro']
+            ${['Redução de preço','Promoção / Cupom','Melhoria de título','Troca de categoria','Anúncio patrocinado','Kit / Bundle','Revisão de fotos','Produto Novo','Outro']
               .map(o => `<option ${d.modificacao===o?'selected':''}>${o}</option>`).join('')}
           </select>
         </td>
@@ -282,12 +315,14 @@ function renderParados() {
     }).join('');
   }
 
-  const total = STATE.parados.length;
+  const totalHistorico = STATE.totalParadosHistorico.size;
+  const pendentes = STATE.parados.length;
   const trabAtivos = Object.values(STATE.db).filter(r => !r.expirado).length;
-  const saida = Object.values(STATE.db).filter(r => r.resultadoSaida).length;
-  document.getElementById('s-total').textContent        = total;
+  const saida = Object.values(STATE.db).filter(r => r.resultadoSaida).length
+              + Object.values(STATE.dbNovos).filter(r => r.resultadoSaida).length;
+  document.getElementById('s-total').textContent        = totalHistorico;
   document.getElementById('s-trabalhados').textContent  = trabAtivos;
-  document.getElementById('s-pendentes').textContent    = total;
+  document.getElementById('s-pendentes').textContent    = pendentes;
   document.getElementById('s-saida').textContent        = saida;
 }
 
@@ -310,7 +345,7 @@ function marcarFeito(sku, checkbox) {
     return;
   }
 
-  STATE.db[sku] = {
+  const record = {
     fornecedor: item ? item.fornecedor : '',
     categoria:  item ? item.categoria  : '',
     margem:      draft.margem || '',
@@ -324,17 +359,42 @@ function marcarFeito(sku, checkbox) {
     resultadoSaida: false,
   };
 
+  const isProdutoNovo = draft.modificacao === 'Produto Novo';
+
+  if (isProdutoNovo) {
+    STATE.dbNovos[sku] = record;
+    saveDBNovos();
+  } else {
+    STATE.db[sku] = record;
+    saveDB();
+  }
+
   delete STATE.draft[sku];
-  saveDB();
   saveDraft();
 
   // Remove visualmente da lista de parados
   STATE.parados = STATE.parados.filter(p => p.sku !== sku);
 
-  toast(`✓ ${sku} marcado como feito — movido para "Já Feito"`);
+  toast(isProdutoNovo
+    ? `✓ ${sku} marcado como Produto Novo — movido para "Produtos Novos"`
+    : `✓ ${sku} marcado como feito — movido para "Já Feito"`);
   updateBadges();
   renderParados();
   renderTrabalhados();
+  renderNovos();
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MOVER PRODUTO NOVO MANUALMENTE PARA PARADOS
+// Diferente do "Já Feito", Produtos Novos não expiram automaticamente
+// em 10 dias — só saem de lá se o usuário clicar neste botão.
+// ─────────────────────────────────────────────────────────────────
+function moverNovoParaParados(sku) {
+  if (!confirm(`Mover ${sku} de "Produtos Novos" para "SKUs Parados"?`)) return;
+  delete STATE.dbNovos[sku];
+  saveDBNovos();
+  toast(`${sku} movido para SKUs Parados`);
+  fetchSheet(); // re-processa para recolocar na lista de parados se ainda se qualificar
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -409,6 +469,59 @@ function desfazerFeito(sku) {
   saveDB();
   toast(`${sku} voltou para SKUs Parados`);
   fetchSheet(); // re-processa para recolocar na lista de parados se ainda se qualificar
+}
+
+// ─────────────────────────────────────────────────────────────────
+// RENDER: PRODUTOS NOVOS
+// Não calcula expiração — produtos novos só saem daqui manualmente
+// pelo botão "Mover para Parados".
+// ─────────────────────────────────────────────────────────────────
+function renderNovos() {
+  const search = document.getElementById('searchNovos').value.toLowerCase();
+
+  const entries = Object.entries(STATE.dbNovos).map(([sku, rec]) => {
+    const atual = STATE.allItems[sku];
+    const s7Atual  = atual ? atual.s7d  : rec.s7dNaEpoca;
+    const s30Atual = atual ? atual.s30d : rec.s30dNaEpoca;
+    const teveSaida = !!rec.resultadoSaida;
+    return { sku, ...rec, s7Atual, s30Atual, teveSaida };
+  });
+
+  entries.sort((a, b) => new Date(b.doneDate) - new Date(a.doneDate));
+
+  const filtered = entries.filter(e =>
+    !search || e.sku.toLowerCase().includes(search) || (e.obs||'').toLowerCase().includes(search)
+  );
+
+  const tbody = document.getElementById('bodyNovos');
+  const empty = document.getElementById('emptyNovos');
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  tbody.innerHTML = filtered.map(e => {
+    const statusBadge = e.teveSaida
+      ? '<span class="badge badge-green">✅ Teve saída</span>'
+      : '<span class="badge badge-accent">🆕 Aguardando primeira venda</span>';
+
+    return `<tr>
+      <td><span class="mono">${e.sku}</span></td>
+      <td>${e.fornecedor || '—'}</td>
+      <td>${fmtDate(e.doneDate)}</td>
+      <td class="mono">${e.margem ? e.margem + '%' : '—'}</td>
+      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escAttr(e.obs||'')}">${e.obs || '—'}</td>
+      <td class="mono" style="text-align:center">${e.s7Atual}</td>
+      <td class="mono" style="text-align:center">${e.s30Atual}</td>
+      <td>${statusBadge}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="moverNovoParaParados('${esc(e.sku)}')">Mover p/ Parados</button></td>
+    </tr>`;
+  }).join('');
+
+  updateBadges();
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -548,6 +661,7 @@ function exportCSV() {
 function updateBadges() {
   document.getElementById('badge-parados').textContent     = STATE.parados.length;
   document.getElementById('badge-trabalhados').textContent = Object.keys(STATE.db).length;
+  document.getElementById('badge-novos').textContent       = Object.keys(STATE.dbNovos).length;
   document.getElementById('badge-recentes').textContent    = STATE.recentes.length;
 }
 
@@ -589,5 +703,12 @@ function escAttr(s)  { return (s || '').replace(/"/g, '&quot;'); }
 
 function saveDB()   { localStorage.setItem('skuDB', JSON.stringify(STATE.db)); }
 function loadDB()   { try { STATE.db = JSON.parse(localStorage.getItem('skuDB') || '{}'); } catch { STATE.db = {}; } }
+function saveDBNovos() { localStorage.setItem('skuDBNovos', JSON.stringify(STATE.dbNovos)); }
+function loadDBNovos() { try { STATE.dbNovos = JSON.parse(localStorage.getItem('skuDBNovos') || '{}'); } catch { STATE.dbNovos = {}; } }
 function saveDraft(){ localStorage.setItem('skuDraft', JSON.stringify(STATE.draft)); }
 function loadDraft(){ try { STATE.draft = JSON.parse(localStorage.getItem('skuDraft') || '{}'); } catch { STATE.draft = {}; } }
+function saveHistorico() { localStorage.setItem('skuHistorico', JSON.stringify([...STATE.totalParadosHistorico])); }
+function loadHistorico() {
+  try { STATE.totalParadosHistorico = new Set(JSON.parse(localStorage.getItem('skuHistorico') || '[]')); }
+  catch { STATE.totalParadosHistorico = new Set(); }
+}

@@ -29,6 +29,10 @@
       📋 Já Feito
       <span class="nav-badge" id="badge-trabalhados">0</span>
     </button>
+    <button class="nav-item" data-page="novos">
+      🆕 Produtos Novos
+      <span class="nav-badge" id="badge-novos">0</span>
+    </button>
     <button class="nav-item" data-page="apresentacao">
       📊 Apresentação
     </button>
@@ -148,6 +152,45 @@
         </table>
         <div class="empty" id="emptyTrabalhados">
           <p>Nenhum SKU marcado como feito ainda. Vá em SKUs Parados e marque ✓ ao concluir uma modificação.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE: PRODUTOS NOVOS -->
+    <section class="page" id="page-novos">
+      <div class="page-header">
+        <div>
+          <div class="page-title">🆕 Produtos Novos</div>
+          <div class="page-sub">Produtos recém cadastrados — não expiram automaticamente, ficam aqui até serem movidos manualmente</div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search-wrap">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input class="search-input" id="searchNovos" placeholder="Buscar SKU ou observação..." />
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="tblNovos">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Fornecedor</th>
+              <th>Data Cadastro</th>
+              <th>Margem</th>
+              <th>Observação</th>
+              <th>Saída 7d</th>
+              <th>Saída 30d</th>
+              <th>Status</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody id="bodyNovos"></tbody>
+        </table>
+        <div class="empty" id="emptyNovos">
+          <p>Nenhum produto novo registrado ainda. Marque a modificação como "Produto Novo" na aba SKUs Parados.</p>
         </div>
       </div>
     </section>
