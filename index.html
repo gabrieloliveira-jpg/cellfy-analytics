@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cellfy Analytics — Gestão de SKUs Parados</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-brand">
+    <div class="brand-mark">C</div>
+    cellfy<span class="suffix">.analytics</span>
+  </div>
+  <div class="topbar-spacer"></div>
+  <div id="lastUpdate" class="last-update"></div>
+  <button class="btn btn-primary btn-sm" id="refreshBtn">↻ Atualizar</button>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-label">Menu</div>
+    <button class="nav-item active" data-page="parados">
+      🔴 SKUs Parados
+      <span class="nav-badge warn" id="badge-parados">0</span>
+    </button>
+    <button class="nav-item" data-page="trabalhados">
+      📋 Já Feito
+      <span class="nav-badge" id="badge-trabalhados">0</span>
+    </button>
+    <button class="nav-item" data-page="apresentacao">
+      📊 Apresentação
+    </button>
+    <button class="nav-item" data-page="recentes">
+      🆕 Recém Ativos
+      <span class="nav-badge" id="badge-recentes">0</span>
+    </button>
+  </nav>
+
+  <main class="main">
+
+    <!-- PAGE: PARADOS -->
+    <section class="page active" id="page-parados">
+      <div class="page-header">
+        <div>
+          <div class="page-title">SKUs Parados (+60 dias)</div>
+          <div class="page-sub">Estoque &gt; 0 e zero saída nos últimos 60 dias — anote a modificação e marque ✓ quando feito</div>
+        </div>
+      </div>
+
+      <div class="stats" id="statsParados">
+        <div class="stat warn">
+          <div class="stat-label">Total Parados</div>
+          <div class="stat-val" id="s-total">—</div>
+          <div class="stat-sub">com estoque &gt; 0</div>
+        </div>
+        <div class="stat accent">
+          <div class="stat-label">Já Feito</div>
+          <div class="stat-val" id="s-trabalhados">—</div>
+          <div class="stat-sub">marcados como concluído</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Pendentes</div>
+          <div class="stat-val" id="s-pendentes" style="color:var(--text)">—</div>
+          <div class="stat-sub">aguardando análise</div>
+        </div>
+        <div class="stat green">
+          <div class="stat-label">Tiveram Saída</div>
+          <div class="stat-val" id="s-saida">—</div>
+          <div class="stat-sub">após intervenção</div>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search-wrap">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input class="search-input" id="searchParados" placeholder="Buscar SKU, fornecedor ou categoria..." />
+        </div>
+        <select class="filter-select" id="filterCat"><option value="">Todas categorias</option></select>
+      </div>
+
+      <div class="table-wrap">
+        <div class="loading-state" id="loadingParados">
+          <div class="spinner"></div>
+          <p>Carregando dados da planilha...</p>
+        </div>
+        <table id="tblParados" style="display:none">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Fornecedor</th>
+              <th>Categoria</th>
+              <th style="text-align:right">Estoque</th>
+              <th style="width:90px">Margem %</th>
+              <th>Modificação</th>
+              <th>Observação</th>
+              <th style="width:60px;text-align:center">Feito</th>
+            </tr>
+          </thead>
+          <tbody id="bodyParados"></tbody>
+        </table>
+        <div class="empty" id="emptyParados" style="display:none">
+          <p>Nenhum SKU encontrado com os filtros aplicados.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE: TRABALHADOS (JÁ FEITO) -->
+    <section class="page" id="page-trabalhados">
+      <div class="page-header">
+        <div>
+          <div class="page-title">SKUs Já Feito</div>
+          <div class="page-sub">Acompanhamento automático: o site verifica na planilha se o SKU teve saída após a modificação</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="exportBtn">⬇ Exportar CSV</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="search-wrap">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input class="search-input" id="searchTrabalhados" placeholder="Buscar SKU ou observação..." />
+        </div>
+        <select class="filter-select" id="filterSaida">
+          <option value="">Todos</option>
+          <option value="sim">✅ Tiveram saída</option>
+          <option value="nao">❌ Ainda sem saída</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table id="tblTrabalhados">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Fornecedor</th>
+              <th>Data Modificação</th>
+              <th>Margem</th>
+              <th>Modificação</th>
+              <th>Observação</th>
+              <th>Saída 7d</th>
+              <th>Saída 30d</th>
+              <th>Resultado</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody id="bodyTrabalhados"></tbody>
+        </table>
+        <div class="empty" id="emptyTrabalhados">
+          <p>Nenhum SKU marcado como feito ainda. Vá em SKUs Parados e marque ✓ ao concluir uma modificação.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE: APRESENTAÇÃO -->
+    <section class="page" id="page-apresentacao">
+      <div class="page-header">
+        <div>
+          <div class="page-title">📊 Apresentação Geral</div>
+          <div class="page-sub">Resumo executivo para reuniões e acompanhamento semanal</div>
+        </div>
+      </div>
+
+      <div class="present-grid">
+        <div class="present-card big warn">
+          <div class="present-num" id="p-parados">—</div>
+          <div class="present-label">SKUs sem saída há +60 dias</div>
+        </div>
+        <div class="present-card big accent">
+          <div class="present-num" id="p-modificados">—</div>
+          <div class="present-label">Já modificados</div>
+        </div>
+        <div class="present-card big green">
+          <div class="present-num" id="p-com-saida">—</div>
+          <div class="present-label">Modificados e com saída</div>
+        </div>
+      </div>
+
+      <div class="present-secondary">
+        <div class="present-card">
+          <div class="present-num-sm" id="p-sem-saida-ainda">—</div>
+          <div class="present-label">Modificados, ainda sem saída</div>
+        </div>
+        <div class="present-card">
+          <div class="present-num-sm" id="p-pendentes">—</div>
+          <div class="present-label">Ainda não modificados</div>
+        </div>
+        <div class="present-card">
+          <div class="present-num-sm" id="p-conversao">—</div>
+          <div class="present-label">Taxa de conversão</div>
+        </div>
+        <div class="present-card">
+          <div class="present-num-sm" id="p-recentes">—</div>
+          <div class="present-label">Recém ativos (60d)</div>
+        </div>
+      </div>
+
+      <div class="present-bar-section">
+        <div class="week-title">Progresso Geral</div>
+        <div class="bar-row">
+          <div class="bar-label">Modificados <span id="bar-mod-pct"></span></div>
+          <div class="bar-track"><div class="bar-fill accent" id="bar-mod"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label">Com saída (dos modificados) <span id="bar-saida-pct"></span></div>
+          <div class="bar-track"><div class="bar-fill green" id="bar-saida"></div></div>
+        </div>
+      </div>
+
+      <div class="week-section">
+        <div class="week-title">📅 Resumo por Semana</div>
+        <div id="weekHistory"></div>
+      </div>
+    </section>
+
+    <!-- PAGE: RECENTES -->
+    <section class="page" id="page-recentes">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Recém Ativos nos Últimos 60 dias</div>
+          <div class="page-sub">SKUs com estoque &gt; 0 e que tiveram saída recente</div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="search-wrap">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input class="search-input" id="searchRecentes" placeholder="Buscar SKU..." />
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="tblRecentes">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Fornecedor</th>
+              <th>Categoria</th>
+              <th style="text-align:right">Estoque</th>
+              <th style="text-align:right">Saídas 60d</th>
+              <th style="text-align:right">Saídas 30d</th>
+              <th style="text-align:right">Saídas 7d</th>
+            </tr>
+          </thead>
+          <tbody id="bodyRecentes"></tbody>
+        </table>
+        <div class="empty" id="emptyRecentes"><p>Atualize para ver os dados.</p></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
