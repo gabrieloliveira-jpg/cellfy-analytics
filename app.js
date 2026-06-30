@@ -135,6 +135,22 @@ function processData(rows) {
   const allItems = {};
   const cats = new Set();
 
+  // Primeiro, atualiza o resultado de saída de todos os SKUs "feitos"
+  // usando os dados desta atualização — precisa vir antes do loop de
+  // classificação porque a expiração depende de já sabermos se teve saída.
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    const sku = String(r[colSKU] || '').trim();
+    if (!sku || !STATE.db[sku]) continue;
+    const s7d  = toNum(r[colS7]);
+    const s30d = toNum(r[colS30]);
+    const rec  = STATE.db[sku];
+    if (s7d > rec.s7dNaEpoca || s30d > rec.s30dNaEpoca) {
+      rec.resultadoSaida = true;
+    }
+  }
+  saveDB();
+
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const r = rows[i];
     const sku = String(r[colSKU] || '').trim();
@@ -153,9 +169,10 @@ function processData(rows) {
     if (categoria) cats.add(categoria);
 
     const jaFeito = !!STATE.db[sku];
+    const expirado = jaFeito && checkExpirado(STATE.db[sku]);
 
-    // Parados: estoque>0, 60d=0, e AINDA NÃO marcado como feito
-    if (estoque > 0 && s60d === 0 && !jaFeito) parados.push(item);
+    // Parados: estoque>0, 60d=0, e (NUNCA foi feito OU expirou sem saída em 10 dias)
+    if (estoque > 0 && s60d === 0 && (!jaFeito || expirado)) parados.push(item);
 
     // Recém ativos: estoque>0 e 60d>0
     if (estoque > 0 && s60d > 0) recentes.push(item);
@@ -188,6 +205,22 @@ function processData(rows) {
   renderRecentes();
 
   toast(`✓ Planilha atualizada — ${parados.length} parados, ${Object.keys(STATE.db).length} já feitos`);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// EXPIRAÇÃO: 10 dias sem saída após a modificação
+// Se já passaram 10 dias desde doneDate e nunca teve saída (resultadoSaida
+// nunca virou true), o SKU "expira" e volta para a lista de Parados,
+// mas continua marcado no histórico de "Já Feito" com um aviso.
+// ─────────────────────────────────────────────────────────────────
+const DIAS_EXPIRACAO = 10;
+
+function checkExpirado(rec) {
+  if (rec.resultadoSaida) return false; // já teve saída, não expira
+  const dias = (Date.now() - new Date(rec.doneDate).getTime()) / (1000 * 60 * 60 * 24);
+  const expirado = dias >= DIAS_EXPIRACAO;
+  if (expirado) rec.expirado = true;
+  return expirado;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -250,10 +283,10 @@ function renderParados() {
   }
 
   const total = STATE.parados.length;
-  const trab  = Object.keys(STATE.db).length;
+  const trabAtivos = Object.values(STATE.db).filter(r => !r.expirado).length;
   const saida = Object.values(STATE.db).filter(r => r.resultadoSaida).length;
   document.getElementById('s-total').textContent        = total;
-  document.getElementById('s-trabalhados').textContent  = trab;
+  document.getElementById('s-trabalhados').textContent  = trabAtivos;
   document.getElementById('s-pendentes').textContent    = total;
   document.getElementById('s-saida').textContent        = saida;
 }
@@ -317,13 +350,9 @@ function renderTrabalhados() {
     const atual = STATE.allItems[sku];
     const s7Atual  = atual ? atual.s7d  : rec.s7dNaEpoca;
     const s30Atual = atual ? atual.s30d : rec.s30dNaEpoca;
-
-    // Teve saída se, depois da modificação, a venda de 7d OU 30d aumentou
-    // em relação ao que era no momento em que foi marcado.
-    const teveSaida = (s7Atual > rec.s7dNaEpoca) || (s30Atual > rec.s30dNaEpoca);
-
-    rec.resultadoSaida = teveSaida; // guarda para os contadores
-    return { sku, ...rec, s7Atual, s30Atual, teveSaida };
+    const teveSaida = !!rec.resultadoSaida;
+    const expirado  = checkExpirado(rec); // também marca rec.expirado se for o caso
+    return { sku, ...rec, s7Atual, s30Atual, teveSaida, expirado };
   });
 
   entries.sort((a, b) => new Date(b.doneDate) - new Date(a.doneDate));
@@ -346,9 +375,15 @@ function renderTrabalhados() {
   empty.style.display = 'none';
 
   tbody.innerHTML = filtered.map(e => {
-    const resultBadge = e.teveSaida
-      ? '<span class="badge badge-green">✅ Teve saída</span>'
-      : '<span class="badge badge-warn">🕐 Ainda sem saída</span>';
+    let resultBadge;
+    if (e.teveSaida) {
+      resultBadge = '<span class="badge badge-green">✅ Teve saída</span>';
+    } else if (e.expirado) {
+      resultBadge = '<span class="badge badge-danger badge-expirado">↩ Voltou p/ Parados — sem saída em 10 dias</span>';
+    } else {
+      const diasRestantes = Math.max(0, DIAS_EXPIRACAO - Math.floor((Date.now() - new Date(e.doneDate).getTime()) / (1000*60*60*24)));
+      resultBadge = `<span class="badge badge-warn">🕐 Ainda sem saída (${diasRestantes}d restantes)</span>`;
+    }
 
     return `<tr>
       <td><span class="mono">${e.sku}</span></td>
@@ -364,6 +399,7 @@ function renderTrabalhados() {
     </tr>`;
   }).join('');
 
+  saveDB();
   updateBadges();
 }
 

@@ -237,6 +237,7 @@ td { padding: 10px 14px; font-size: 13px; vertical-align: middle; }
 .badge-danger  { background: var(--danger-soft); color: var(--danger); }
 .badge-accent  { background: var(--accent-soft); color: var(--cellfy-cyan); }
 .badge-muted   { background: rgba(155,139,184,0.15); color: var(--muted); }
+.badge-danger.badge-expirado { white-space: normal; line-height: 1.3; display: inline-block; max-width: 180px; }
 
 /* ── STATES ── */
 .loading-state { padding: 60px; text-align: center; color: var(--muted); }
