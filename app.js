@@ -53,17 +53,21 @@ document.addEventListener('DOMContentLoaded', () => {
 async function fetchSheet() {
   setLoading(true);
 
-  const sheetNames = ['Fluxo por SKU', 'FluxoV2', 'Visão Geral', 'Sheet1', 'Página1'];
+  // "Visão Geral" é a aba correta com os dados consolidados — tenta primeiro
+  const sheetNames = ['Visão Geral', 'Fluxo por SKU', 'FluxoV2', 'Sheet1', 'Página1'];
   let rows = null;
+  let lastError = '';
 
   for (const name of sheetNames) {
     try {
       const url  = `${SHEET_API}&sheet=${encodeURIComponent(name)}&cachebust=${Date.now()}`;
       const res  = await fetch(url);
+      if (!res.ok) { lastError = `HTTP ${res.status} na aba "${name}"`; continue; }
       const text = await res.text();
       const parsed = parseGVizResponse(text);
       if (parsed && parsed.length > 3) { rows = parsed; break; }
-    } catch (e) {}
+      lastError = `Aba "${name}" respondeu mas sem dados suficientes (${parsed ? parsed.length : 0} linhas)`;
+    } catch (e) { lastError = `Erro de rede na aba "${name}": ${e.message}`; }
   }
 
   if (!rows) {
@@ -72,11 +76,11 @@ async function fetchSheet() {
       const res  = await fetch(url);
       const text = await res.text();
       rows = parseGVizResponse(text);
-    } catch (e) {}
+    } catch (e) { lastError = e.message; }
   }
 
   if (!rows || rows.length < 3) {
-    setLoading(false, '❌ Não foi possível carregar a planilha. Verifique se ela está pública.');
+    setLoading(false, `❌ Não foi possível carregar a planilha. ${lastError || 'Verifique se ela está pública.'}`);
     return;
   }
 
@@ -89,9 +93,15 @@ function parseGVizResponse(text) {
   let data;
   try { data = JSON.parse(match[1]); } catch (e) { return null; }
   if (!data.table || !data.table.rows) return null;
-  return data.table.rows.map(row =>
+
+  // O Google já separa o cabeçalho em data.table.cols — NÃO vem dentro de rows.
+  // Construímos a primeira linha do nosso array a partir dos labels das colunas,
+  // e o restante são os dados reais (sem perder nem duplicar nenhuma linha).
+  const headerRow = (data.table.cols || []).map(c => c.label || '');
+  const dataRows = data.table.rows.map(row =>
     row.c.map(cell => (cell && cell.v !== null && cell.v !== undefined) ? cell.v : '')
   );
+  return [headerRow, ...dataRows];
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -101,20 +111,21 @@ function parseGVizResponse(text) {
 // marcados como feito, para detectar se passaram a ter saída).
 // ─────────────────────────────────────────────────────────────────
 function processData(rows) {
-  let headerIdx = 0;
-  for (let i = 0; i < Math.min(5, rows.length); i++) {
-    if (rows[i].some(c => String(c).toLowerCase().includes('sku'))) { headerIdx = i; break; }
-  }
+  // Com o parser corrigido, a linha 0 é sempre o cabeçalho real (vem de data.table.cols)
+  const headerIdx = 0;
 
   const header = rows[headerIdx] || [];
-  let colSKU = 2, colForn = 1, colCat = 3, colEstoque = 4, colS7 = 6, colS30 = 7, colS60 = 9;
+  // Posições confirmadas na planilha real (coluna A fica vazia/oculta):
+  // 0=vazio 1=Fornecedor 2=SKUs 3=Categorias 4=Estoque WMS ... 7=7dias 8=30dias 9=60dias
+  let colSKU = 2, colForn = 1, colCat = 3, colEstoque = 4, colS7 = 7, colS30 = 8, colS60 = 9;
 
   header.forEach((h, i) => {
-    const lh = String(h).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const lh = String(h).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    if (lh.includes('evoluc')) return; // ignora "Evolução últimos X dias" — não é a coluna de vendas
     if (/^skus?$/.test(lh))                          colSKU     = i;
     else if (lh.includes('fornecedor'))               colForn    = i;
     else if (lh.includes('categor'))                  colCat     = i;
-    else if (lh.includes('estoque'))                  colEstoque = i;
+    else if (lh === 'estoque wms' || (lh.includes('estoque') && lh.includes('wms'))) colEstoque = i;
     else if (lh.includes('60') && lh.includes('dia'))  colS60     = i;
     else if (lh.includes('30') && lh.includes('dia'))  colS30     = i;
     else if (lh.includes('7')  && lh.includes('dia'))  colS7      = i;
