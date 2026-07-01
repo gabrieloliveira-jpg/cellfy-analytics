@@ -303,6 +303,13 @@ function renderParados() {
           </select>
         </td>
         <td>
+          <select class="inline-input" onchange="updateDraft('${esc(item.sku)}','responsavel',this.value)">
+            <option value="">Responsável...</option>
+            ${['Gabriel','Mauricio','Carol']
+              .map(n => `<option ${d.responsavel===n?'selected':''}>${n}</option>`).join('')}
+          </select>
+        </td>
+        <td>
           <input type="text" class="inline-input" placeholder="Observação..."
             value="${escAttr(d.obs || '')}"
             oninput="updateDraft('${esc(item.sku)}','obs',this.value)" />
@@ -350,6 +357,7 @@ function marcarFeito(sku, checkbox) {
     categoria:  item ? item.categoria  : '',
     margem:      draft.margem || '',
     modificacao: draft.modificacao || '',
+    responsavel: draft.responsavel || '',
     obs:         draft.obs || '',
     doneDate:    new Date().toISOString(),
     // Snapshot do momento em que foi marcado — usado para detectar mudança depois
@@ -449,9 +457,10 @@ function renderTrabalhados() {
       <td><span class="mono">${e.sku}</span></td>
       <td>${e.fornecedor || '—'}</td>
       <td>${fmtDate(e.doneDate)}</td>
+      <td>${e.responsavel ? `<span class="badge badge-resp badge-resp-${esc(e.responsavel.toLowerCase())}">${e.responsavel}</span>` : '—'}</td>
       <td class="mono">${e.margem ? e.margem + '%' : '—'}</td>
       <td>${e.modificacao || '—'}</td>
-      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escAttr(e.obs||'')}">${e.obs || '—'}</td>
+      <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escAttr(e.obs||'')}">${e.obs || '—'}</td>
       <td class="mono" style="text-align:center">${e.s7Atual}</td>
       <td class="mono" style="text-align:center">${e.s30Atual}</td>
       <td>${resultBadge}</td>
@@ -512,8 +521,9 @@ function renderNovos() {
       <td><span class="mono">${e.sku}</span></td>
       <td>${e.fornecedor || '—'}</td>
       <td>${fmtDate(e.doneDate)}</td>
+      <td>${e.responsavel ? `<span class="badge badge-resp badge-resp-${esc(e.responsavel.toLowerCase())}">${e.responsavel}</span>` : '—'}</td>
       <td class="mono">${e.margem ? e.margem + '%' : '—'}</td>
-      <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escAttr(e.obs||'')}">${e.obs || '—'}</td>
+      <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escAttr(e.obs||'')}">${e.obs || '—'}</td>
       <td class="mono" style="text-align:center">${e.s7Atual}</td>
       <td class="mono" style="text-align:center">${e.s30Atual}</td>
       <td>${statusBadge}</td>
@@ -563,11 +573,9 @@ function renderApresentacao() {
   // Garante que resultadoSaida está atualizado
   renderTrabalhados();
 
-  // SKUs sem saída há +60 dias = TODOS que ainda não venderam:
-  // lista de parados ativos + já feitos sem saída + produtos novos sem saída
-  const semSaidaFeitos = Object.values(STATE.db).filter(r => !r.resultadoSaida).length;
-  const semSaidaNovos  = Object.values(STATE.dbNovos).filter(r => !r.resultadoSaida).length;
-  const totalSemSaida  = STATE.parados.length + semSaidaFeitos + semSaidaNovos;
+  // "SKUs sem saída há +60 dias" = número bruto direto da planilha:
+  // TODOS os SKUs com estoque>0 e 60d=0 agora, independente de feitos/novos/expirados.
+  const totalBruto = Object.values(STATE.allItems).filter(i => i.estoque > 0 && i.s60d === 0).length;
 
   const modificados    = Object.keys(STATE.db).length;
   const comSaida       = Object.values(STATE.db).filter(r => r.resultadoSaida).length;
@@ -575,7 +583,7 @@ function renderApresentacao() {
   const pendentes      = STATE.parados.length;
   const conv           = modificados ? Math.round(comSaida / modificados * 100) : 0;
 
-  document.getElementById('p-parados').textContent        = totalSemSaida;
+  document.getElementById('p-parados').textContent        = totalBruto;
   document.getElementById('p-modificados').textContent    = modificados;
   document.getElementById('p-com-saida').textContent      = comSaida;
   document.getElementById('p-sem-saida-ainda').textContent = semSaidaAinda;
@@ -583,7 +591,7 @@ function renderApresentacao() {
   document.getElementById('p-conversao').textContent      = modificados ? conv + '%' : '—';
   document.getElementById('p-recentes').textContent       = STATE.recentes.length;
 
-  const modPct = totalSemSaida ? Math.round(modificados / totalSemSaida * 100) : 0;
+  const modPct = totalBruto ? Math.round(modificados / totalBruto * 100) : 0;
   document.getElementById('bar-mod').style.width    = modPct + '%';
   document.getElementById('bar-mod-pct').textContent = modPct + '%';
   document.getElementById('bar-saida').style.width    = conv + '%';

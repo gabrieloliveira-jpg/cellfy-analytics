@@ -68,17 +68,8 @@ body {
   text-decoration: none;
   user-select: none;
 }
-.cellfy-logo-icon {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-}
-.cellfy-logo-text {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  color: #ffffff;
-}
+.cellfy-logo-icon { width: 32px; height: 32px; flex-shrink: 0; }
+.cellfy-logo-text { font-size: 17px; font-weight: 700; letter-spacing: -0.3px; color: #ffffff; }
 .logo-divider {
   width: 1px;
   height: 20px;
@@ -352,6 +343,12 @@ td {
 .badge-cyan   { background: var(--cyan-soft); color: var(--cyan); }
 .badge-muted  { background: rgba(255,255,255,0.07); color: var(--muted); }
 .badge-danger.badge-expirado { white-space: normal; line-height: 1.35; max-width: 195px; }
+
+/* Badges por responsável */
+.badge-resp { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
+.badge-resp-gabriel  { background: rgba(99,102,241,0.18); color: #a5b4fc; }
+.badge-resp-mauricio { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+.badge-resp-carol    { background: rgba(236,72,153,0.15); color: #f9a8d4; }
 
 /* ─── INLINE EDIT ───────────────────────────────── */
 .inline-input {

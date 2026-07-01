@@ -11,15 +11,25 @@
 <body>
 
 <header class="topbar">
-  <!-- Logo Cellfy fiel à marca original -->
   <div class="cellfy-logo">
-    <svg class="cellfy-logo-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <!-- Círculo externo -->
-      <circle cx="18" cy="18" r="16" stroke="#2dd4d4" stroke-width="2.2" fill="none"/>
-      <!-- Seta/arco interno (ícone ©-style da Cellfy) -->
-      <path d="M24 11.5 A9 9 0 1 0 24 24.5" stroke="#2dd4d4" stroke-width="2.2" stroke-linecap="round" fill="none"/>
-      <!-- Ponta da seta -->
-      <polyline points="24,8 24,12 28,12" stroke="#2dd4d4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <svg class="cellfy-logo-icon" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="lg1" x1="0" y1="0" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#8b5cf6"/>
+          <stop offset="50%" stop-color="#6366f1"/>
+          <stop offset="100%" stop-color="#06b6d4"/>
+        </linearGradient>
+        <linearGradient id="lg2" x1="44" y1="0" x2="0" y2="44" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stop-color="#22d3ee"/>
+          <stop offset="100%" stop-color="#818cf8"/>
+        </linearGradient>
+      </defs>
+      <!-- Outer C arc -->
+      <path d="M38 9 A20 20 0 1 0 38 35" stroke="url(#lg1)" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+      <!-- Inner circle -->
+      <circle cx="22" cy="22" r="9" stroke="url(#lg2)" stroke-width="3.5" fill="none"/>
+      <!-- Diagonal slash -->
+      <line x1="16" y1="28" x2="28" y2="16" stroke="url(#lg2)" stroke-width="3" stroke-linecap="round"/>
     </svg>
     <span class="cellfy-logo-text">cellfy</span>
     <div class="logo-divider"></div>
@@ -110,6 +120,7 @@
               <th style="text-align:right">Estoque</th>
               <th style="width:90px">Margem %</th>
               <th>Modificação</th>
+              <th>Responsável</th>
               <th>Observação</th>
               <th style="width:60px;text-align:center">Feito</th>
             </tr>
@@ -151,6 +162,7 @@
               <th>SKU</th>
               <th>Fornecedor</th>
               <th>Data Modificação</th>
+              <th>Responsável</th>
               <th>Margem</th>
               <th>Modificação</th>
               <th>Observação</th>
@@ -191,6 +203,7 @@
               <th>SKU</th>
               <th>Fornecedor</th>
               <th>Data Cadastro</th>
+              <th>Responsável</th>
               <th>Margem</th>
               <th>Observação</th>
               <th>Saída 7d</th>
