@@ -506,7 +506,7 @@ function renderNovos() {
   tbody.innerHTML = filtered.map(e => {
     const statusBadge = e.teveSaida
       ? '<span class="badge badge-green">✅ Teve saída</span>'
-      : '<span class="badge badge-accent">🆕 Aguardando primeira venda</span>';
+      : '<span class="badge badge-cyan">🆕 Aguardando primeira venda</span>';
 
     return `<tr>
       <td><span class="mono">${e.sku}</span></td>
@@ -563,25 +563,30 @@ function renderApresentacao() {
   // Garante que resultadoSaida está atualizado
   renderTrabalhados();
 
-  const totalParados   = STATE.parados.length + Object.keys(STATE.db).length; // todos que já foram ou estão parados
+  // SKUs sem saída há +60 dias = TODOS que ainda não venderam:
+  // lista de parados ativos + já feitos sem saída + produtos novos sem saída
+  const semSaidaFeitos = Object.values(STATE.db).filter(r => !r.resultadoSaida).length;
+  const semSaidaNovos  = Object.values(STATE.dbNovos).filter(r => !r.resultadoSaida).length;
+  const totalSemSaida  = STATE.parados.length + semSaidaFeitos + semSaidaNovos;
+
   const modificados    = Object.keys(STATE.db).length;
-  const comSaida        = Object.values(STATE.db).filter(r => r.resultadoSaida).length;
-  const semSaidaAinda    = modificados - comSaida;
-  const pendentes        = STATE.parados.length;
-  const conv             = modificados ? Math.round(comSaida / modificados * 100) : 0;
+  const comSaida       = Object.values(STATE.db).filter(r => r.resultadoSaida).length;
+  const semSaidaAinda  = modificados - comSaida;
+  const pendentes      = STATE.parados.length;
+  const conv           = modificados ? Math.round(comSaida / modificados * 100) : 0;
 
-  document.getElementById('p-parados').textContent        = STATE.parados.length;
+  document.getElementById('p-parados').textContent        = totalSemSaida;
   document.getElementById('p-modificados').textContent    = modificados;
-  document.getElementById('p-com-saida').textContent       = comSaida;
+  document.getElementById('p-com-saida').textContent      = comSaida;
   document.getElementById('p-sem-saida-ainda').textContent = semSaidaAinda;
-  document.getElementById('p-pendentes').textContent       = pendentes;
-  document.getElementById('p-conversao').textContent       = modificados ? conv + '%' : '—';
-  document.getElementById('p-recentes').textContent        = STATE.recentes.length;
+  document.getElementById('p-pendentes').textContent      = pendentes;
+  document.getElementById('p-conversao').textContent      = modificados ? conv + '%' : '—';
+  document.getElementById('p-recentes').textContent       = STATE.recentes.length;
 
-  const modPct = totalParados ? Math.round(modificados / totalParados * 100) : 0;
-  document.getElementById('bar-mod').style.width   = modPct + '%';
+  const modPct = totalSemSaida ? Math.round(modificados / totalSemSaida * 100) : 0;
+  document.getElementById('bar-mod').style.width    = modPct + '%';
   document.getElementById('bar-mod-pct').textContent = modPct + '%';
-  document.getElementById('bar-saida').style.width   = conv + '%';
+  document.getElementById('bar-saida').style.width    = conv + '%';
   document.getElementById('bar-saida-pct').textContent = conv + '%';
 
   renderWeekHistory();

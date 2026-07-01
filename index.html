@@ -3,17 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cellfy Analytics — Gestão de SKUs Parados</title>
+<title>Cellfy Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header class="topbar">
-  <div class="topbar-brand">
-    <div class="brand-mark">C</div>
-    cellfy<span class="suffix">.analytics</span>
+  <!-- Logo Cellfy fiel à marca original -->
+  <div class="cellfy-logo">
+    <svg class="cellfy-logo-icon" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- Círculo externo -->
+      <circle cx="18" cy="18" r="16" stroke="#2dd4d4" stroke-width="2.2" fill="none"/>
+      <!-- Seta/arco interno (ícone ©-style da Cellfy) -->
+      <path d="M24 11.5 A9 9 0 1 0 24 24.5" stroke="#2dd4d4" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+      <!-- Ponta da seta -->
+      <polyline points="24,8 24,12 28,12" stroke="#2dd4d4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </svg>
+    <span class="cellfy-logo-text">cellfy</span>
+    <div class="logo-divider"></div>
+    <span class="logo-product">Analytics</span>
   </div>
-  <div class="topbar-spacer"></div>
+  <div class="topbar-space"></div>
   <div id="lastUpdate" class="last-update"></div>
   <button class="btn btn-primary btn-sm" id="refreshBtn">↻ Atualizar</button>
 </header>
@@ -207,7 +219,7 @@
       <div class="present-grid">
         <div class="present-card big warn">
           <div class="present-num" id="p-parados">—</div>
-          <div class="present-label">SKUs sem saída há +60 dias</div>
+          <div class="present-label">SKUs sem saída há +60 dias (incluindo já modificados)</div>
         </div>
         <div class="present-card big accent">
           <div class="present-num" id="p-modificados">—</div>
