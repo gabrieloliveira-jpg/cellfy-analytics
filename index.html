@@ -185,7 +185,30 @@
       <div class="page-header">
         <div>
           <div class="page-title">🆕 Produtos Novos</div>
-          <div class="page-sub">Produtos recém cadastrados — não expiram automaticamente, ficam aqui até serem movidos manualmente</div>
+          <div class="page-sub">Chegaram há menos de 2 meses — anote a modificação e marque ✓ quando feito</div>
+        </div>
+      </div>
+
+      <div class="stats" style="grid-template-columns:repeat(4,1fr)">
+        <div class="stat cyan">
+          <div class="stat-label">Total Novos</div>
+          <div class="stat-val" id="n-total">—</div>
+          <div class="stat-sub">cadastrados &lt; 2 meses</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Já Trabalhados</div>
+          <div class="stat-val" id="n-trabalhados" style="color:var(--text)">—</div>
+          <div class="stat-sub">movidos para Já Feito</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Pendentes</div>
+          <div class="stat-val" id="n-pendentes" style="color:var(--text)">—</div>
+          <div class="stat-sub">aguardando ação</div>
+        </div>
+        <div class="stat green">
+          <div class="stat-label">Tiveram Saída</div>
+          <div class="stat-val" id="n-saida">—</div>
+          <div class="stat-sub">após intervenção</div>
         </div>
       </div>
 
@@ -202,20 +225,19 @@
             <tr>
               <th>SKU</th>
               <th>Fornecedor</th>
-              <th>Data Cadastro</th>
+              <th>Chegada</th>
+              <th style="text-align:right">Estoque</th>
+              <th style="width:80px">Margem %</th>
+              <th>Modificação</th>
               <th>Responsável</th>
-              <th>Margem</th>
               <th>Observação</th>
-              <th>Saída 7d</th>
-              <th>Saída 30d</th>
-              <th>Status</th>
-              <th>Ação</th>
+              <th style="width:60px;text-align:center">Feito</th>
             </tr>
           </thead>
           <tbody id="bodyNovos"></tbody>
         </table>
         <div class="empty" id="emptyNovos">
-          <p>Nenhum produto novo registrado ainda. Marque a modificação como "Produto Novo" na aba SKUs Parados.</p>
+          <p>Nenhum produto novo detectado. Produtos chegados há menos de 2 meses aparecem aqui automaticamente.</p>
         </div>
       </div>
     </section>
@@ -272,6 +294,32 @@
         <div class="bar-row">
           <div class="bar-label">Com saída (dos modificados) <span id="bar-saida-pct"></span></div>
           <div class="bar-track"><div class="bar-fill green" id="bar-saida"></div></div>
+        </div>
+      </div>
+
+      <div class="week-section">
+        <div class="week-title">🆕 Produtos Novos (últimos 2 meses)</div>
+        <div class="stats" style="grid-template-columns:repeat(4,1fr);margin-bottom:0">
+          <div class="stat cyan">
+            <div class="stat-label">Total Novos</div>
+            <div class="stat-val" id="pn-total">—</div>
+            <div class="stat-sub">cadastrados &lt; 2 meses</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Trabalhados</div>
+            <div class="stat-val" id="pn-trabalhados" style="color:var(--text)">—</div>
+            <div class="stat-sub">movidos para Já Feito</div>
+          </div>
+          <div class="stat green">
+            <div class="stat-label">Com Saída</div>
+            <div class="stat-val" id="pn-saida">—</div>
+            <div class="stat-sub">após intervenção</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Conversão</div>
+            <div class="stat-val" id="pn-conv" style="color:var(--text)">—</div>
+            <div class="stat-sub">taxa de sucesso</div>
+          </div>
         </div>
       </div>
 

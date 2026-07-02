@@ -22,7 +22,8 @@ const STATE = {
   db:          {},
   dbNovos:     {},
   draft:       {},
-  cadastroMap: {}, // sku -> dataChegada (Date object) — da planilha de cadastro
+  draftNovos:  {},
+  cadastroMap: {},
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -32,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadDB();
   loadDBNovos();
   loadDraft();
+  loadDraftNovos();
 
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -532,52 +534,132 @@ function desfazerFeito(sku) {
 function renderNovos() {
   const search = document.getElementById('searchNovos').value.toLowerCase();
 
-  const entries = Object.entries(STATE.dbNovos).map(([sku, rec]) => {
-    const atual = STATE.allItems[sku];
-    const s7Atual  = atual ? atual.s7d  : rec.s7dNaEpoca;
-    const s30Atual = atual ? atual.s30d : rec.s30dNaEpoca;
-    const teveSaida = !!rec.resultadoSaida;
-    return { sku, ...rec, s7Atual, s30Atual, teveSaida };
-  });
-
-  entries.sort((a, b) => new Date(b.doneDate) - new Date(a.doneDate));
-
-  const filtered = entries.filter(e =>
-    !search || e.sku.toLowerCase().includes(search) || (e.obs||'').toLowerCase().includes(search)
-  );
+  // Produtos ainda na aba Novos (não movidos para Já Feito)
+  const pending = Object.entries(STATE.dbNovos)
+    .filter(([sku, rec]) => !rec.movidoParaFeito)
+    .map(([sku, rec]) => {
+      const atual = STATE.allItems[sku];
+      const d = STATE.draftNovos[sku] || {};
+      return { sku, ...rec, atual, d };
+    })
+    .filter(e => !search || e.sku.toLowerCase().includes(search) || (e.obs||'').toLowerCase().includes(search))
+    .sort((a, b) => new Date(b.doneDate) - new Date(a.doneDate));
 
   const tbody = document.getElementById('bodyNovos');
   const empty = document.getElementById('emptyNovos');
+  const tbl   = document.getElementById('tblNovos');
 
-  if (filtered.length === 0) {
-    tbody.innerHTML = '';
+  if (pending.length === 0) {
+    tbl.style.display = 'none';
     empty.style.display = 'block';
-    return;
+  } else {
+    tbl.style.display = 'table';
+    empty.style.display = 'none';
+    tbody.innerHTML = pending.map(e => {
+      const chegada = STATE.cadastroMap[e.sku];
+      const chegadaStr = chegada ? fmtDateFromDate(chegada) : fmtDate(e.doneDate);
+      const item = STATE.allItems[e.sku];
+      const estoque = item ? item.estoque : e.estoqueNaEpoca;
+      const d = e.d;
+      return `<tr id="rown-${rowId(e.sku)}">
+        <td><span class="mono">${e.sku}</span></td>
+        <td>${e.fornecedor || '—'}</td>
+        <td>${chegadaStr}</td>
+        <td style="text-align:right" class="mono">${estoque}</td>
+        <td>
+          <input type="number" class="inline-input" placeholder="%" step="0.1"
+            value="${d.margem !== undefined ? d.margem : (e.margem||'')}"
+            oninput="updateDraftNovo('${esc(e.sku)}','margem',this.value)" />
+        </td>
+        <td>
+          <select class="inline-input" onchange="updateDraftNovo('${esc(e.sku)}','modificacao',this.value)">
+            <option value="">Selecione...</option>
+            ${['Redução de preço','Promoção / Cupom','Melhoria de título','Troca de categoria','Anúncio patrocinado','Kit / Bundle','Revisão de fotos','Outro']
+              .map(o => `<option ${(d.modificacao||e.modificacao)===o?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <select class="inline-input" onchange="updateDraftNovo('${esc(e.sku)}','responsavel',this.value)">
+            <option value="">Responsável...</option>
+            ${['Gabriel','Mauricio','Carol']
+              .map(n => `<option ${(d.responsavel||e.responsavel)===n?'selected':''}>${n}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <input type="text" class="inline-input" placeholder="Observação..."
+            value="${escAttr(d.obs !== undefined ? d.obs : (e.obs||''))}"
+            oninput="updateDraftNovo('${esc(e.sku)}','obs',this.value)" />
+        </td>
+        <td class="checkbox-wrap">
+          <input type="checkbox" class="check-feito" title="Marcar como feito"
+            onchange="marcarNovoFeito('${esc(e.sku)}', this)" />
+        </td>
+      </tr>`;
+    }).join('');
   }
-  empty.style.display = 'none';
 
-  tbody.innerHTML = filtered.map(e => {
-    const statusBadge = e.teveSaida
-      ? '<span class="badge badge-green">✅ Teve saída</span>'
-      : e.autoNovo
-        ? '<span class="badge badge-cyan">🤖 Auto · Aguardando venda</span>'
-        : '<span class="badge badge-cyan">🆕 Aguardando primeira venda</span>';
-
-    return `<tr>
-      <td><span class="mono">${e.sku}</span></td>
-      <td>${e.fornecedor || '—'}</td>
-      <td>${fmtDate(e.doneDate)}</td>
-      <td>${e.responsavel ? `<span class="badge badge-resp badge-resp-${esc(e.responsavel.toLowerCase())}">${e.responsavel}</span>` : '—'}</td>
-      <td class="mono">${e.margem ? e.margem + '%' : '—'}</td>
-      <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escAttr(e.obs||'')}">${e.obs || '—'}</td>
-      <td class="mono" style="text-align:center">${e.s7Atual}</td>
-      <td class="mono" style="text-align:center">${e.s30Atual}</td>
-      <td>${statusBadge}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="moverNovoParaParados('${esc(e.sku)}')">Mover p/ Parados</button></td>
-    </tr>`;
-  }).join('');
+  // Contadores
+  const total      = Object.keys(STATE.dbNovos).length;
+  const trabalhados = Object.values(STATE.dbNovos).filter(r => r.movidoParaFeito).length;
+  const pendentes  = total - trabalhados;
+  const saida      = Object.values(STATE.dbNovos).filter(r => r.movidoParaFeito && r.resultadoSaida).length;
+  document.getElementById('n-total').textContent      = total;
+  document.getElementById('n-trabalhados').textContent = trabalhados;
+  document.getElementById('n-pendentes').textContent   = pendentes;
+  document.getElementById('n-saida').textContent       = saida;
 
   updateBadges();
+}
+
+function updateDraftNovo(sku, field, value) {
+  if (!STATE.draftNovos) STATE.draftNovos = {};
+  if (!STATE.draftNovos[sku]) STATE.draftNovos[sku] = {};
+  STATE.draftNovos[sku][field] = value;
+  saveDraftNovos();
+}
+
+// Move produto novo para "Já Feito" com os dados anotados
+function marcarNovoFeito(sku, checkbox) {
+  const rec   = STATE.dbNovos[sku];
+  const draft = (STATE.draftNovos || {})[sku] || {};
+  const item  = STATE.allItems[sku];
+
+  if (!draft.modificacao && !rec.modificacao) {
+    toast('⚠ Selecione o tipo de modificação antes de marcar como feito');
+    checkbox.checked = false;
+    return;
+  }
+
+  // Registra no db (Já Feito) com os dados da anotação
+  STATE.db[sku] = {
+    fornecedor:     rec.fornecedor || '',
+    categoria:      rec.categoria  || '',
+    margem:         draft.margem      !== undefined ? draft.margem      : (rec.margem      || ''),
+    modificacao:    draft.modificacao !== undefined ? draft.modificacao : (rec.modificacao || ''),
+    responsavel:    draft.responsavel !== undefined ? draft.responsavel : (rec.responsavel || ''),
+    obs:            draft.obs         !== undefined ? draft.obs         : (rec.obs         || ''),
+    doneDate:       new Date().toISOString(),
+    estoqueNaEpoca: item ? item.estoque : rec.estoqueNaEpoca,
+    s7dNaEpoca:     item ? item.s7d     : rec.s7dNaEpoca,
+    s30dNaEpoca:    item ? item.s30d    : rec.s30dNaEpoca,
+    resultadoSaida: false,
+    vinhaDosNovos:  true, // flag para contagem na apresentação
+  };
+
+  // Marca no dbNovos como "movido" para manter histórico
+  STATE.dbNovos[sku].movidoParaFeito = true;
+
+  // Limpa draft
+  if (STATE.draftNovos) delete STATE.draftNovos[sku];
+
+  saveDB();
+  saveDBNovos();
+  saveDraftNovos();
+
+  toast(`✓ ${sku} movido de Produtos Novos para "Já Feito"`);
+  updateBadges();
+  renderNovos();
+  renderTrabalhados();
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -616,32 +698,40 @@ function renderRecentes() {
 // RENDER: APRESENTAÇÃO
 // ─────────────────────────────────────────────────────────────────
 function renderApresentacao() {
-  // Garante que resultadoSaida está atualizado
   renderTrabalhados();
 
-  // "SKUs sem saída há +60 dias" = número bruto direto da planilha:
-  // TODOS os SKUs com estoque>0 e 60d=0 agora, independente de feitos/novos/expirados.
-  const totalBruto = Object.values(STATE.allItems).filter(i => i.estoque > 0 && i.s60d === 0).length;
-
+  const totalBruto     = Object.values(STATE.allItems).filter(i => i.estoque > 0 && i.s60d === 0).length;
   const modificados    = Object.keys(STATE.db).length;
   const comSaida       = Object.values(STATE.db).filter(r => r.resultadoSaida).length;
   const semSaidaAinda  = modificados - comSaida;
   const pendentes      = STATE.parados.length;
   const conv           = modificados ? Math.round(comSaida / modificados * 100) : 0;
 
-  document.getElementById('p-parados').textContent        = totalBruto;
-  document.getElementById('p-modificados').textContent    = modificados;
-  document.getElementById('p-com-saida').textContent      = comSaida;
+  document.getElementById('p-parados').textContent         = totalBruto;
+  document.getElementById('p-modificados').textContent     = modificados;
+  document.getElementById('p-com-saida').textContent       = comSaida;
   document.getElementById('p-sem-saida-ainda').textContent = semSaidaAinda;
-  document.getElementById('p-pendentes').textContent      = pendentes;
-  document.getElementById('p-conversao').textContent      = modificados ? conv + '%' : '—';
-  document.getElementById('p-recentes').textContent       = STATE.recentes.length;
+  document.getElementById('p-pendentes').textContent       = pendentes;
+  document.getElementById('p-conversao').textContent       = modificados ? conv + '%' : '—';
+  document.getElementById('p-recentes').textContent        = STATE.recentes.length;
 
   const modPct = totalBruto ? Math.round(modificados / totalBruto * 100) : 0;
-  document.getElementById('bar-mod').style.width    = modPct + '%';
-  document.getElementById('bar-mod-pct').textContent = modPct + '%';
+  document.getElementById('bar-mod').style.width     = modPct + '%';
+  document.getElementById('bar-mod-pct').textContent  = modPct + '%';
   document.getElementById('bar-saida').style.width    = conv + '%';
   document.getElementById('bar-saida-pct').textContent = conv + '%';
+
+  // ─ Produtos Novos na Apresentação ─
+  const novosAll       = Object.values(STATE.dbNovos);
+  const novoTotal      = novosAll.length;
+  const novoTrabalhados= novosAll.filter(r => r.movidoParaFeito).length;
+  const novoSaida      = novosAll.filter(r => r.movidoParaFeito && r.resultadoSaida).length;
+  const novoConv       = novoTrabalhados ? Math.round(novoSaida / novoTrabalhados * 100) : 0;
+
+  document.getElementById('pn-total').textContent       = novoTotal;
+  document.getElementById('pn-trabalhados').textContent  = novoTrabalhados;
+  document.getElementById('pn-saida').textContent        = novoSaida;
+  document.getElementById('pn-conv').textContent         = novoTrabalhados ? novoConv + '%' : '—';
 
   renderWeekHistory();
 }
@@ -764,9 +854,11 @@ function rowId(sku) { return sku.replace(/[^a-zA-Z0-9]/g, '_'); }
 function esc(s)      { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 function escAttr(s)  { return (s || '').replace(/"/g, '&quot;'); }
 
-function saveDB()    { localStorage.setItem('skuDB',      JSON.stringify(STATE.db)); }
-function loadDB()    { try { STATE.db      = JSON.parse(localStorage.getItem('skuDB')      || '{}'); } catch { STATE.db = {}; } }
-function saveDBNovos(){ localStorage.setItem('skuDBNovos', JSON.stringify(STATE.dbNovos)); }
-function loadDBNovos(){ try { STATE.dbNovos = JSON.parse(localStorage.getItem('skuDBNovos') || '{}'); } catch { STATE.dbNovos = {}; } }
-function saveDraft() { localStorage.setItem('skuDraft',   JSON.stringify(STATE.draft)); }
-function loadDraft() { try { STATE.draft   = JSON.parse(localStorage.getItem('skuDraft')   || '{}'); } catch { STATE.draft = {}; } }
+function saveDB()       { localStorage.setItem('skuDB',        JSON.stringify(STATE.db)); }
+function loadDB()       { try { STATE.db        = JSON.parse(localStorage.getItem('skuDB')        || '{}'); } catch { STATE.db = {}; } }
+function saveDBNovos()  { localStorage.setItem('skuDBNovos',   JSON.stringify(STATE.dbNovos)); }
+function loadDBNovos()  { try { STATE.dbNovos   = JSON.parse(localStorage.getItem('skuDBNovos')   || '{}'); } catch { STATE.dbNovos = {}; } }
+function saveDraft()    { localStorage.setItem('skuDraft',     JSON.stringify(STATE.draft)); }
+function loadDraft()    { try { STATE.draft     = JSON.parse(localStorage.getItem('skuDraft')     || '{}'); } catch { STATE.draft = {}; } }
+function saveDraftNovos(){ localStorage.setItem('skuDraftNovos',JSON.stringify(STATE.draftNovos)); }
+function loadDraftNovos(){ try { STATE.draftNovos = JSON.parse(localStorage.getItem('skuDraftNovos') || '{}'); } catch { STATE.draftNovos = {}; } }
