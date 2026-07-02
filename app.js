@@ -4,6 +4,11 @@
 const SHEET_ID  = '1404SCPiabg6abXRphpHqGXQ0frRkIlUptDV9m8a-x3w';
 const SHEET_API = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
 
+// Segunda planilha: cadastro de produtos com data de chegada
+const CADASTRO_ID  = '1K5xz9rJ36BwBHOta8XcXtE2mUNO7-7_krvCriXMz-Wo';
+const CADASTRO_API = `https://docs.google.com/spreadsheets/d/${CADASTRO_ID}/gviz/tq?tqx=out:json`;
+const MESES_NOVO   = 2; // SKUs chegados há menos de X meses são considerados "Produto Novo"
+
 // ─────────────────────────────────────────────────────────────────
 // STATE
 // Cada SKU "feito" guarda: anotação (margem, modificação, obs),
@@ -11,13 +16,13 @@ const SHEET_API = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tq
 // (estoqueNaEpoca, s7dNaEpoca, s30dNaEpoca) para comparar depois.
 // ─────────────────────────────────────────────────────────────────
 const STATE = {
-  parados:  [],   // SKUs ainda parados (não marcados como feito)
-  recentes: [],
-  allItems: {},   // sku -> dados mais recentes da planilha (para refresh dos "feito")
-  db: {},         // sku -> { margem, modificacao, obs, doneDate, estoqueNaEpoca, s7dNaEpoca, s30dNaEpoca, fornecedor, categoria }
-  dbNovos: {},    // sku -> mesma estrutura do db, mas para "Produto Novo" — nunca expira em 10 dias
-  draft: {},      // sku -> { margem, modificacao, obs }  (anotações em digitação, ainda não marcadas como feito)
-  totalParadosHistorico: new Set(), // SKUs que já se qualificaram como parados alguma vez (só cresce; sai quando vende)
+  parados:     [],
+  recentes:    [],
+  allItems:    {},
+  db:          {},
+  dbNovos:     {},
+  draft:       {},
+  cadastroMap: {}, // sku -> dataChegada (Date object) — da planilha de cadastro
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -27,7 +32,6 @@ document.addEventListener('DOMContentLoaded', () => {
   loadDB();
   loadDBNovos();
   loadDraft();
-  loadHistorico();
 
   document.querySelectorAll('.nav-item').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -59,38 +63,73 @@ document.addEventListener('DOMContentLoaded', () => {
 async function fetchSheet() {
   setLoading(true);
 
-  // "Visão Geral" é a aba correta com os dados consolidados — tenta primeiro
-  const sheetNames = ['Visão Geral', 'Fluxo por SKU', 'FluxoV2', 'Sheet1', 'Página1'];
-  let rows = null;
-  let lastError = '';
+  // Busca as duas planilhas em paralelo
+  const [mainRows, cadastroRows] = await Promise.all([
+    fetchGViz(SHEET_API, ['Visão Geral', 'Fluxo por SKU', 'FluxoV2', 'Sheet1', 'Página1']),
+    fetchGViz(CADASTRO_API, ['Processo de cadastro de produto', 'Sheet1', 'Página1']),
+  ]);
 
-  for (const name of sheetNames) {
-    try {
-      const url  = `${SHEET_API}&sheet=${encodeURIComponent(name)}&cachebust=${Date.now()}`;
-      const res  = await fetch(url);
-      if (!res.ok) { lastError = `HTTP ${res.status} na aba "${name}"`; continue; }
-      const text = await res.text();
-      const parsed = parseGVizResponse(text);
-      if (parsed && parsed.length > 3) { rows = parsed; break; }
-      lastError = `Aba "${name}" respondeu mas sem dados suficientes (${parsed ? parsed.length : 0} linhas)`;
-    } catch (e) { lastError = `Erro de rede na aba "${name}": ${e.message}`; }
-  }
-
-  if (!rows) {
-    try {
-      const url  = `${SHEET_API}&cachebust=${Date.now()}`;
-      const res  = await fetch(url);
-      const text = await res.text();
-      rows = parseGVizResponse(text);
-    } catch (e) { lastError = e.message; }
-  }
-
-  if (!rows || rows.length < 3) {
-    setLoading(false, `❌ Não foi possível carregar a planilha. ${lastError || 'Verifique se ela está pública.'}`);
+  if (!mainRows || mainRows.length < 3) {
+    setLoading(false, '❌ Não foi possível carregar a planilha principal. Verifique se ela está pública.');
     return;
   }
 
-  processData(rows);
+  // Monta o mapa SKU -> dataChegada a partir da planilha de cadastro
+  STATE.cadastroMap = buildCadastroMap(cadastroRows);
+
+  processData(mainRows);
+}
+
+// Busca genérica da API GViz tentando múltiplos nomes de aba
+async function fetchGViz(apiBase, sheetNames) {
+  for (const name of sheetNames) {
+    try {
+      const res  = await fetch(`${apiBase}&sheet=${encodeURIComponent(name)}&cachebust=${Date.now()}`);
+      if (!res.ok) continue;
+      const parsed = parseGVizResponse(await res.text());
+      if (parsed && parsed.length > 3) return parsed;
+    } catch {}
+  }
+  // Fallback: aba padrão
+  try {
+    const res  = await fetch(`${apiBase}&cachebust=${Date.now()}`);
+    const parsed = parseGVizResponse(await res.text());
+    if (parsed && parsed.length > 3) return parsed;
+  } catch {}
+  return null;
+}
+
+// Constrói { sku: Date } a partir da planilha de cadastro
+// Coluna B (índice 1) = data, Coluna D (índice 3) = SKU
+function buildCadastroMap(rows) {
+  if (!rows) return {};
+  const map = {};
+  for (let i = 1; i < rows.length; i++) { // linha 0 = cabeçalho
+    const r   = rows[i];
+    const sku = String(r[3] || '').trim(); // col D
+    const raw = r[1];                      // col B
+    if (!sku || !raw) continue;
+
+    let date = null;
+    if (raw instanceof Date) {
+      date = raw;
+    } else {
+      // Tenta DD/MM/AAAA
+      const m = String(raw).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (m) date = new Date(+m[3], +m[2] - 1, +m[1]);
+    }
+    if (date && !isNaN(date)) map[sku] = date;
+  }
+  return map;
+}
+
+// Verifica se um SKU chegou há menos de MESES_NOVO meses (= produto novo)
+function isProdutoNovoAutomatico(sku) {
+  const chegada = STATE.cadastroMap[sku];
+  if (!chegada) return false;
+  const agora   = new Date();
+  const limite  = new Date(agora.getFullYear(), agora.getMonth() - MESES_NOVO, agora.getDate());
+  return chegada >= limite; // chegou DEPOIS do limite = menos de 2 meses atrás
 }
 
 function parseGVizResponse(text) {
@@ -177,42 +216,45 @@ function processData(rows) {
     allItems[sku] = item;
     if (categoria) cats.add(categoria);
 
-    const jaFeito = !!STATE.db[sku];
-    const jaNovo  = !!STATE.dbNovos[sku];
+    const jaFeito  = !!STATE.db[sku];
+    const jaNovoDB = !!STATE.dbNovos[sku];
     const expirado = jaFeito && checkExpirado(STATE.db[sku]);
 
-    // Parados: estoque>0, 60d=0, e (NUNCA foi feito/novo OU expirou sem saída em 10 dias)
-    // Produtos Novos NUNCA voltam automaticamente — só pelo botão manual.
-    if (estoque > 0 && s60d === 0 && !jaNovo && (!jaFeito || expirado)) parados.push(item);
+    // Classifica como Produto Novo automaticamente se chegou há menos de MESES_NOVO meses
+    const novoAutomatico = isProdutoNovoAutomatico(sku);
 
-    // Total Parados histórico: registra qualquer SKU que se qualifique agora como parado
-    // (estoque>0, 60d=0), independente de já ter sido marcado como feito ou não.
-    // Só sai dessa contagem quando o produto realmente vender (ver bloco abaixo).
-    if (estoque > 0 && s60d === 0) {
-      STATE.totalParadosHistorico.add(sku);
+    // Parados: estoque>0, 60d=0, não é novo (automático ou manual), e não foi feito (ou expirou)
+    if (estoque > 0 && s60d === 0 && !novoAutomatico && !jaNovoDB && (!jaFeito || expirado)) {
+      parados.push(item);
     }
 
-    // Recém ativos: estoque>0 e 60d>0
+    // Produto novo automático: estoque>0, 60d=0, chegou há < 2 meses
+    // Vai para a aba de Produtos Novos automaticamente (sem precisar marcar manualmente)
+    if (estoque > 0 && s60d === 0 && novoAutomatico && !jaNovoDB) {
+      // Registra no dbNovos automaticamente se ainda não estiver lá
+      STATE.dbNovos[sku] = STATE.dbNovos[sku] || {
+        fornecedor:     item.fornecedor,
+        categoria:      item.categoria,
+        margem:         '',
+        modificacao:    'Produto Novo',
+        responsavel:    '',
+        obs:            `Chegada: ${fmtDateFromDate(STATE.cadastroMap[sku])}`,
+        doneDate:       STATE.cadastroMap[sku].toISOString(),
+        estoqueNaEpoca: item.estoque,
+        s7dNaEpoca:     item.s7d,
+        s30dNaEpoca:    item.s30d,
+        resultadoSaida: false,
+        autoNovo:       true, // flag: foi inserido automaticamente pela planilha de cadastro
+      };
+    }
+
     if (estoque > 0 && s60d > 0) recentes.push(item);
   }
 
   STATE.parados  = parados;
   STATE.recentes = recentes;
   STATE.allItems = allItems;
-
-  // Remove do histórico cumulativo qualquer SKU que tenha vendido de fato:
-  // (a) voltou a ter saída nos últimos 60 dias direto na planilha, ou
-  // (b) está marcado como "feito"/"novo" e o sistema já detectou resultadoSaida=true.
-  for (const sku of [...STATE.totalParadosHistorico]) {
-    const atual = allItems[sku];
-    const vendeuNaPlanilha = atual && atual.s60d > 0;
-    const vendeuNoDb    = STATE.db[sku] && STATE.db[sku].resultadoSaida;
-    const vendeuNoNovos = STATE.dbNovos[sku] && STATE.dbNovos[sku].resultadoSaida;
-    if (vendeuNaPlanilha || vendeuNoDb || vendeuNoNovos) {
-      STATE.totalParadosHistorico.delete(sku);
-    }
-  }
-  saveHistorico();
+  saveDBNovos(); // salva eventuais produtos novos adicionados automaticamente
 
   // Filtro de categorias
   const sel = document.getElementById('filterCat');
@@ -322,12 +364,14 @@ function renderParados() {
     }).join('');
   }
 
-  const totalHistorico = STATE.totalParadosHistorico.size;
+  // Total espelho da planilha: todos SKUs com estoque>0 e 60d=0 AGORA
+  // Inclui os já marcados como feito/novo que ainda não venderam — reflete a realidade
+  const totalEspelho = Object.values(STATE.allItems).filter(i => i.estoque > 0 && i.s60d === 0).length;
   const pendentes = STATE.parados.length;
   const trabAtivos = Object.values(STATE.db).filter(r => !r.expirado).length;
   const saida = Object.values(STATE.db).filter(r => r.resultadoSaida).length
               + Object.values(STATE.dbNovos).filter(r => r.resultadoSaida).length;
-  document.getElementById('s-total').textContent        = totalHistorico;
+  document.getElementById('s-total').textContent        = totalEspelho;
   document.getElementById('s-trabalhados').textContent  = trabAtivos;
   document.getElementById('s-pendentes').textContent    = pendentes;
   document.getElementById('s-saida').textContent        = saida;
@@ -515,7 +559,9 @@ function renderNovos() {
   tbody.innerHTML = filtered.map(e => {
     const statusBadge = e.teveSaida
       ? '<span class="badge badge-green">✅ Teve saída</span>'
-      : '<span class="badge badge-cyan">🆕 Aguardando primeira venda</span>';
+      : e.autoNovo
+        ? '<span class="badge badge-cyan">🤖 Auto · Aguardando venda</span>'
+        : '<span class="badge badge-cyan">🆕 Aguardando primeira venda</span>';
 
     return `<tr>
       <td><span class="mono">${e.sku}</span></td>
@@ -709,19 +755,18 @@ function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('pt-BR');
 }
+function fmtDateFromDate(d) {
+  if (!d || !(d instanceof Date)) return '—';
+  return d.toLocaleDateString('pt-BR');
+}
 
 function rowId(sku) { return sku.replace(/[^a-zA-Z0-9]/g, '_'); }
 function esc(s)      { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 function escAttr(s)  { return (s || '').replace(/"/g, '&quot;'); }
 
-function saveDB()   { localStorage.setItem('skuDB', JSON.stringify(STATE.db)); }
-function loadDB()   { try { STATE.db = JSON.parse(localStorage.getItem('skuDB') || '{}'); } catch { STATE.db = {}; } }
-function saveDBNovos() { localStorage.setItem('skuDBNovos', JSON.stringify(STATE.dbNovos)); }
-function loadDBNovos() { try { STATE.dbNovos = JSON.parse(localStorage.getItem('skuDBNovos') || '{}'); } catch { STATE.dbNovos = {}; } }
-function saveDraft(){ localStorage.setItem('skuDraft', JSON.stringify(STATE.draft)); }
-function loadDraft(){ try { STATE.draft = JSON.parse(localStorage.getItem('skuDraft') || '{}'); } catch { STATE.draft = {}; } }
-function saveHistorico() { localStorage.setItem('skuHistorico', JSON.stringify([...STATE.totalParadosHistorico])); }
-function loadHistorico() {
-  try { STATE.totalParadosHistorico = new Set(JSON.parse(localStorage.getItem('skuHistorico') || '[]')); }
-  catch { STATE.totalParadosHistorico = new Set(); }
-}
+function saveDB()    { localStorage.setItem('skuDB',      JSON.stringify(STATE.db)); }
+function loadDB()    { try { STATE.db      = JSON.parse(localStorage.getItem('skuDB')      || '{}'); } catch { STATE.db = {}; } }
+function saveDBNovos(){ localStorage.setItem('skuDBNovos', JSON.stringify(STATE.dbNovos)); }
+function loadDBNovos(){ try { STATE.dbNovos = JSON.parse(localStorage.getItem('skuDBNovos') || '{}'); } catch { STATE.dbNovos = {}; } }
+function saveDraft() { localStorage.setItem('skuDraft',   JSON.stringify(STATE.draft)); }
+function loadDraft() { try { STATE.draft   = JSON.parse(localStorage.getItem('skuDraft')   || '{}'); } catch { STATE.draft = {}; } }
